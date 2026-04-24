@@ -57,7 +57,7 @@ export default function MapView() {
 
   // Compute buffer suggestions in an effect (not render) to allow dispatching
   useEffect(() => {
-    if (!state.activeProjectId || !state.pendingLinkIds.length) {
+    if (!state.activeProjectId || !state.pendingLinkIds.length || !state.autoSuggest) {
       if (state.suggestedLinkIds.length) dispatch({ type: 'SET_SUGGESTED_LINKS', payload: [] })
       return
     }
@@ -67,23 +67,27 @@ export default function MapView() {
     const newSuggested = []
     try {
       const pendingFeatures = state.links.filter(f => pendingSet.has(f.id))
-      const pendingStreets = new Set(pendingFeatures.map(f => f.properties?.STREET).filter(Boolean))
       const fc = { type: 'FeatureCollection', features: pendingFeatures }
       const buffered = turf.buffer(fc, 10, { units: 'feet' })
       const polys = buffered.features
       const bufUnion = polys.length === 1 ? polys[0] : polys.reduce((acc, f) => turf.union(acc, f))
       state.links.forEach(f => {
         if (pendingSet.has(f.id) || confirmedMap.has(f.id)) return
-        if (pendingStreets.has(f.properties?.STREET)) return
         try { if (turf.booleanIntersects(f, bufUnion)) newSuggested.push(f.id) } catch (e) {}
       })
     } catch (e) {}
+    // Suggestions are sticky — merge with existing so selected-then-deselected neighbours
+    // don't vanish from the purple set; only manual clear/undo resets them
+    const merged = [...new Set([
+      ...state.suggestedLinkIds.filter(id => !pendingSet.has(id) && !confirmedMap.has(id)),
+      ...newSuggested,
+    ])]
     const cur = [...state.suggestedLinkIds].sort((a, b) => a - b)
-    const nxt = [...newSuggested].sort((a, b) => a - b)
+    const nxt = [...merged].sort((a, b) => a - b)
     if (JSON.stringify(cur) !== JSON.stringify(nxt)) {
-      dispatch({ type: 'SET_SUGGESTED_LINKS', payload: newSuggested })
+      dispatch({ type: 'SET_SUGGESTED_LINKS', payload: merged })
     }
-  }, [state.pendingLinkIds, state.bufferFt, state.activeProjectId]) // eslint-disable-line
+  }, [state.pendingLinkIds, state.bufferFt, state.activeProjectId, state.autoSuggest]) // eslint-disable-line
 
   // Build lookup sets for fast style decisions
   const pendingSet = new Set(state.pendingLinkIds)

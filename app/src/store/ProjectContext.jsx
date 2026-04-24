@@ -89,7 +89,7 @@ export function reducer(state, action) {
     case 'EDIT_PROJECT': {
       const project = state.projects.find(p => p.id === action.payload)
       if (!project) return state
-      return { ...state, activeProjectId: project.id, pendingLinkIds: [...project.linkIds], suggestedLinkIds: [] }
+      return { ...state, activeProjectId: project.id, pendingLinkIds: [...project.linkIds], suggestedLinkIds: [], autoSuggest: false }
     }
 
     case 'SET_BUFFER_FT':

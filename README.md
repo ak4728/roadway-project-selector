@@ -3,7 +3,7 @@
 An interactive browser-based tool for grouping roadway segments into capital improvement projects, with live statistics and export capabilities.
 
 ## Live Demo
-Deployed at [Render](https://render.com) — connect the repo as a Static Site to deploy automatically.
+**[https://roadway-project-selector.onrender.com](https://roadway-project-selector.onrender.com)**
 
 ## Features
 

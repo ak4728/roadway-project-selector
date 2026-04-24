@@ -10,7 +10,7 @@ Deployed at [Render](https://render.com) — connect the repo as a Static Site t
 - **Interactive Leaflet map** with CartoDB Positron basemap and PCI heatmap coloring
 - **Project management** — create, rename, edit, confirm, and delete projects
 - **Click-to-select** road segments; selected segments highlight in cyan
-- **Auto-suggest** — automatically highlights nearby cross-streets in purple based on a configurable buffer distance (feet); toggle on/off per session
+- **Auto-suggest** — automatically highlights touching/intersecting cross-streets in purple using a hardcoded 10 ft proximity buffer; toggle on/off per session. Manual clicks = cyan, auto-suggested = purple, even when both are saved together on confirm.
 - **Live statistics** in the right panel (per active project and all confirmed projects):
   - Segment count, total length, resurface/reconstruction cost, cost per mile
   - Average PCI + PCI distribution bar chart

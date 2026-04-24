@@ -69,7 +69,7 @@ export default function MapView() {
       const pendingFeatures = state.links.filter(f => pendingSet.has(f.id))
       const pendingStreets = new Set(pendingFeatures.map(f => f.properties?.STREET).filter(Boolean))
       const fc = { type: 'FeatureCollection', features: pendingFeatures }
-      const buffered = turf.buffer(fc, state.bufferFt, { units: 'feet' })
+      const buffered = turf.buffer(fc, 10, { units: 'feet' })
       const polys = buffered.features
       const bufUnion = polys.length === 1 ? polys[0] : polys.reduce((acc, f) => turf.union(acc, f))
       state.links.forEach(f => {
@@ -87,23 +87,23 @@ export default function MapView() {
 
   // Build lookup sets for fast style decisions
   const pendingSet = new Set(state.pendingLinkIds)
+  const suggestedSet = new Set(state.suggestedLinkIds)
   const confirmedMap = new Map()
   state.projects.filter(p => p.confirmed).forEach(p => {
     p.linkIds.forEach(id => confirmedMap.set(id, p))
   })
-  // When autoSuggest ON: suggested links appear cyan (included in effective selection)
-  // When autoSuggest OFF: suggested links appear purple (preview only)
+  // effectivePendingSet used only for confirm — includes auto links when autoSuggest ON
+  // Styling: manual clicks = cyan, auto-suggested = always purple (even when autoSuggest ON)
   const effectivePendingSet = new Set([
     ...state.pendingLinkIds,
     ...(state.autoSuggest ? state.suggestedLinkIds : []),
   ])
-  const purpleSet = state.autoSuggest ? new Set() : new Set(state.suggestedLinkIds)
 
   const getStyle = (feature) => {
     const id = feature.id
-    if (effectivePendingSet.has(id)) return { color: '#00E5FF', weight: 8, opacity: 1 }
-    if (confirmedMap.has(id))        return { color: confirmedMap.get(id).color, weight: 5, opacity: 1 }
-    if (purpleSet.has(id))           return { color: '#c084fc', weight: 5, opacity: 0.9 }
+    if (pendingSet.has(id))    return { color: '#00E5FF', weight: 8, opacity: 1 }  // manually selected = cyan
+    if (confirmedMap.has(id))  return { color: confirmedMap.get(id).color, weight: 5, opacity: 1 }
+    if (suggestedSet.has(id))  return { color: '#c084fc', weight: 5, opacity: 0.9 } // auto-suggested = purple
     return { color: getPciColor(feature.properties?.PCI), weight: 4, opacity: 0.85 }
   }
 

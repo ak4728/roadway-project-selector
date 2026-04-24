@@ -15,6 +15,28 @@ function getPciColor(pci) {
   return PCI_COLORS.Excellent
 }
 
+function ZoomController() {
+  const { state, dispatch } = useContext(ProjectContext)
+  const map = useMap()
+  useEffect(() => {
+    const id = state.zoomTargetId
+    if (!id) return
+    const project = state.projects.find(p => p.id === id)
+    if (!project) return
+    const ids = project.id === state.activeProjectId ? state.pendingLinkIds : project.linkIds
+    if (!ids.length) return
+    const features = state.links.filter(f => ids.includes(f.id))
+    if (!features.length) return
+    try {
+      const fc = { type: 'FeatureCollection', features }
+      const [minX, minY, maxX, maxY] = turf.bbox(fc)
+      map.flyToBounds([[minY, minX], [maxY, maxX]], { padding: [60, 60] })
+    } catch (e) {}
+    dispatch({ type: 'SET_ZOOM_TARGET', payload: null })
+  }, [state.zoomTargetId]) // eslint-disable-line
+  return null
+}
+
 function BoundsController({ links }) {
   const map = useMap()
   useEffect(() => {
@@ -40,9 +62,9 @@ export default function MapView() {
 
   const getStyle = (feature) => {
     const id = feature.id
-    if (pendingSet.has(id))    return { color: '#FFD700', weight: 5, opacity: 1 }
-    if (confirmedMap.has(id))  return { color: confirmedMap.get(id).color, weight: 4, opacity: 0.9 }
-    return { color: getPciColor(feature.properties?.PCI), weight: 2, opacity: 0.6 }
+    if (pendingSet.has(id))    return { color: '#00E5FF', weight: 8, opacity: 1 }
+    if (confirmedMap.has(id))  return { color: confirmedMap.get(id).color, weight: 5, opacity: 1 }
+    return { color: getPciColor(feature.properties?.PCI), weight: 4, opacity: 0.85 }
   }
 
   const onEachFeature = (feature, layer) => {
@@ -60,12 +82,22 @@ export default function MapView() {
       if (!state.activeProjectId) return
       dispatch({ type: 'TOGGLE_LINK', payload: feature.id })
     })
-    layer.on('mouseover', () => layer.setStyle({ weight: 5 }))
-    layer.on('mouseout',  () => layer.setStyle(getStyle(feature)))
+    layer.on('mouseover', () => {
+      const s = getStyle(feature)
+      layer.setStyle({ ...s, weight: s.weight + 3, opacity: 1 })
+      const el = layer.getElement()
+      if (el) el.style.filter = 'drop-shadow(0 0 4px #001f4d) drop-shadow(0 0 2px #001f4d)'
+    })
+    layer.on('mouseout', () => {
+      layer.setStyle(getStyle(feature))
+      const el = layer.getElement()
+      if (el) el.style.filter = ''
+    })
   }
 
   // Key forces re-render on selection changes so styles update
-  const mapKey = `${JSON.stringify(state.pendingLinkIds)}-${state.projects.map(p => p.linkIds.join()).join('|')}`
+  // Must include activeProjectId — changing it doesn't alter pendingLinkIds (already []) so without it the GeoJSON layer won't remount and onEachFeature will have a stale closure with activeProjectId=null
+  const mapKey = `${state.activeProjectId}-${JSON.stringify(state.pendingLinkIds)}-${state.projects.map(p => p.linkIds.join()).join('|')}`
 
   return (
     <MapContainer
@@ -74,8 +106,8 @@ export default function MapView() {
       style={{ height: '100%', width: '100%' }}
     >
       <TileLayer
-        attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
       <BoundsController links={state.links} />
       {state.links.length > 0 && (
@@ -90,9 +122,10 @@ export default function MapView() {
         <GeoJSON
           key={`buf-${p.id}`}
           data={p.buffer}
-          style={{ color: p.color, fillColor: p.color, fillOpacity: 0.08, weight: 2, dashArray: '6 4' }}
+          style={{ color: p.color, fillColor: p.color, fillOpacity: 0.1, weight: 2, dashArray: '6 4' }}
         />
       ))}
+      <ZoomController />
     </MapContainer>
   )
 }

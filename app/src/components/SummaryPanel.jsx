@@ -23,8 +23,9 @@ function StatsBlock({ title, color, stats }) {
         ['Segments',            stats.count],
         ['Total Length',        fmtMi(stats.totalLength_mi)],
         ['Resurface Cost',      fmtCurrency(stats.totalResurf)],
+        ['Resurface Cost/Mile', fmtCurrency(stats.costPerMile)],
         ['Reconstruction Cost', fmtCurrency(stats.totalRecon)],
-        ['Cost / Mile',         fmtCurrency(stats.costPerMile)],
+        ['Recon Cost/Mile',     fmtCurrency(stats.reconPerMile)],
         ['Avg PCI',             stats.avgPCI.toFixed(1)],
       ].map(([label, value]) => (
         <div className="stat-row" key={label}>
@@ -34,12 +35,12 @@ function StatsBlock({ title, color, stats }) {
       ))}
 
       <div className="pci-bar-container">
-        <div style={{ fontSize: 10, color: '#888', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           PCI Distribution
         </div>
         {Object.entries(stats.pciDist).map(([key, count]) => (
           <div className="pci-bar-row" key={key}>
-            <span className="pci-bar-label" style={{ fontSize: 10 }}>{key.split(' ')[0]}</span>
+            <span className="pci-bar-label">{key.split(' ')[0]}</span>
             <div className="pci-bar-bg">
               <div
                 className="pci-bar-fill"
@@ -52,6 +53,33 @@ function StatsBlock({ title, color, stats }) {
             <span className="pci-bar-count">{count}</span>
           </div>
         ))}
+      </div>
+
+      <div style={{ borderTop: '1px solid #0f3460', marginTop: 2 }}>
+        <div style={{ padding: '6px 14px', fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Corridor Info</div>
+        {[
+          ['Pavement Type',    stats.paveTypes],
+          ['AC Thickness',     stats.avgAcThick],
+          ['Last Rehab',       stats.latestRehab],
+          ['Last Seal',        stats.latestSeal],
+        ].map(([label, value]) => (
+          <div className="stat-row" key={label}>
+            <span className="stat-label">{label}</span>
+            <span className="stat-value">{value}</span>
+          </div>
+        ))}
+        <div className="pci-bar-container">
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Functional Class</div>
+          {Object.entries(stats.funclDist).sort((a, b) => b[1] - a[1]).map(([fc, cnt]) => (
+            <div className="pci-bar-row" key={fc}>
+              <span style={{ width: 80, fontSize: 10, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={fc}>{fc}</span>
+              <div className="pci-bar-bg">
+                <div className="pci-bar-fill" style={{ width: `${(cnt / stats.count) * 100}%`, background: '#3498db' }} />
+              </div>
+              <span className="pci-bar-count">{cnt}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

@@ -12,6 +12,7 @@ export const initialState = {
   projects: [],
   activeProjectId: null,
   pendingLinkIds: [],
+  zoomTargetId: null,
 }
 
 export function reducer(state, action) {
@@ -74,6 +75,31 @@ export function reducer(state, action) {
         activeProjectId: state.activeProjectId === action.payload ? null : state.activeProjectId,
         pendingLinkIds: state.activeProjectId === action.payload ? [] : state.pendingLinkIds,
       }
+
+    case 'RENAME_PROJECT': {
+      const { id, name } = action.payload
+      return { ...state, projects: state.projects.map(p => p.id === id ? { ...p, name } : p) }
+    }
+
+    case 'RESET_ALL':
+      return { ...initialState, links: state.links }
+
+    case 'RESTORE_STATE':
+      return {
+        ...state,
+        projects: action.payload.projects ?? state.projects,
+        activeProjectId: action.payload.activeProjectId ?? state.activeProjectId,
+        pendingLinkIds: action.payload.pendingLinkIds ?? state.pendingLinkIds,
+      }
+
+    case 'CLEAR_SELECTION':
+      return { ...state, pendingLinkIds: [] }
+
+    case 'SET_ZOOM_TARGET':
+      return { ...state, zoomTargetId: action.payload }
+
+    case 'IMPORT_PROJECTS':
+      return { ...state, projects: action.payload, activeProjectId: null, pendingLinkIds: [], zoomTargetId: null }
 
     default:
       return state

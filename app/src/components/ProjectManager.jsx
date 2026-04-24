@@ -1,12 +1,15 @@
-import { useContext, useState } from 'react'
+import { useContext, useState, useRef } from 'react'
 import * as turf from '@turf/turf'
 import { ProjectContext } from '../store/ProjectContext'
-import { calcStats, exportGeoJSON, exportCSV } from '../utils/stats'
+import { calcStats, exportGeoJSON, exportCSV, exportAllProjectsJSON } from '../utils/stats'
 
 export default function ProjectManager() {
   const { state, dispatch } = useContext(ProjectContext)
   const [newName, setNewName] = useState('')
-  const [bufferMeters, setBufferMeters] = useState(50)
+  const [bufferFt, setBufferFt] = useState(500)
+  const [editingId, setEditingId] = useState(null)
+  const [editingName, setEditingName] = useState('')
+  const importRef = useRef(null)
 
   const activeProject = state.projects.find(p => p.id === state.activeProjectId)
 
@@ -16,14 +19,46 @@ export default function ProjectManager() {
     setNewName('')
   }
 
+  const handleRename = (id) => {
+    const trimmed = editingName.trim()
+    if (trimmed) dispatch({ type: 'RENAME_PROJECT', payload: { id, name: trimmed } })
+    setEditingId(null)
+    setEditingName('')
+  }
+
   const handleConfirm = () => {
     if (!state.pendingLinkIds.length) return
     const features = state.links.filter(f => state.pendingLinkIds.includes(f.id))
     const fc = { type: 'FeatureCollection', features }
     let buffer = null
-    try { buffer = turf.buffer(fc, bufferMeters, { units: 'meters' }) } catch (e) { /* ignore */ }
+    try {
+      const buffered = turf.buffer(fc, bufferFt, { units: 'feet' })
+      const polys = buffered.features
+      buffer = polys.length === 1 ? polys[0] : polys.reduce((acc, f) => turf.union(acc, f))
+    } catch (e) { /* ignore */ }
     dispatch({ type: 'CONFIRM_PROJECT', payload: { buffer } })
   }
+
+  const handleImportFile = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result)
+        if (data.version === 1 && Array.isArray(data.projects)) {
+          dispatch({ type: 'IMPORT_PROJECTS', payload: data.projects })
+        } else {
+          alert('Invalid project file format.')
+        }
+      } catch { alert('Could not parse file.') }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
+  const listedProjects = state.projects.filter(p => p.id !== state.activeProjectId)
+  const confirmedProjects = state.projects.filter(p => p.confirmed)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -47,10 +82,25 @@ export default function ProjectManager() {
       {/* Active project controls */}
       {activeProject && (
         <div className="section" style={{ background: '#0f3460' }}>
-          <div className="section-title" style={{ color: activeProject.color }}>
-            ● Active: {activeProject.name}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="section-title" style={{ color: activeProject.color, marginBottom: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+              ●{' '}
+              {editingId === activeProject.id
+                ? <input autoFocus value={editingName} onChange={e => setEditingName(e.target.value)}
+                    onBlur={() => handleRename(activeProject.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleRename(activeProject.id); if (e.key === 'Escape') setEditingId(null) }}
+                    style={{ fontSize: 12, width: 120, padding: '1px 4px' }} />
+                : <span>{activeProject.name}</span>
+              }
+              <button className="btn-ghost" style={{ fontSize: 10, padding: '1px 5px' }}
+                onClick={() => { setEditingId(activeProject.id); setEditingName(activeProject.name) }}>✎</button>
+            </div>
+            <button className="btn-danger" style={{ fontSize: 10, padding: '3px 7px' }}
+              onClick={() => dispatch({ type: 'DELETE_PROJECT', payload: activeProject.id })}>
+              ✕ Delete
+            </button>
           </div>
-          <div style={{ color: '#aaa', fontSize: 11, marginBottom: 8 }}>
+          <div style={{ color: '#aaa', fontSize: 11, marginBottom: 8, marginTop: 6 }}>
             {state.pendingLinkIds.length} segment(s) selected — click links on map
           </div>
 
@@ -68,21 +118,33 @@ export default function ProjectManager() {
             })}
           </div>
 
-          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
             <button className="btn-ghost" onClick={() => dispatch({ type: 'UNDO_LAST' })}
               disabled={!state.pendingLinkIds.length}>
               ↩ Undo
             </button>
+            <button className="btn-ghost" onClick={() => dispatch({ type: 'CLEAR_SELECTION' })}
+              disabled={!state.pendingLinkIds.length}>
+              ✕ Clear
+            </button>
+            {state.pendingLinkIds.length > 0 && (
+              <button className="btn-ghost"
+                onClick={() => dispatch({ type: 'SET_ZOOM_TARGET', payload: activeProject.id })}>
+                ⌖ Zoom
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
             <label style={{ fontSize: 11, color: '#aaa', display: 'flex', alignItems: 'center', gap: 4 }}>
               Buffer:
               <input
                 type="number"
-                value={bufferMeters}
-                min={10} max={500}
-                onChange={e => setBufferMeters(Number(e.target.value))}
-                style={{ width: 55 }}
+                value={bufferFt}
+                min={50} max={5000}
+                onChange={e => setBufferFt(Number(e.target.value))}
+                style={{ width: 65 }}
               />
-              m
+              ft
             </label>
           </div>
 
@@ -95,15 +157,50 @@ export default function ProjectManager() {
 
       {/* Project list */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        <div className="panel-header" style={{ fontSize: 10 }}>Completed Projects</div>
-        {state.projects.filter(p => p.confirmed).map(p => {
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f3460', padding: '0 8px 0 0' }}>
+          <div className="panel-header" style={{ fontSize: 10 }}>All Projects</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button className="btn-ghost" style={{ fontSize: 10, padding: '3px 7px' }}
+              onClick={() => importRef.current.click()}>
+              ↑ Import
+            </button>
+            <input ref={importRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
+            {confirmedProjects.length > 0 && (
+              <button className="btn-ghost" style={{ fontSize: 10, padding: '3px 7px' }}
+                onClick={() => exportAllProjectsJSON(confirmedProjects)}>
+                ↓ All
+              </button>
+            )}
+            {state.projects.length > 0 && (
+              <button className="btn-danger" style={{ fontSize: 10, padding: '3px 7px' }}
+                onClick={() => { if (window.confirm('Reset all projects?')) dispatch({ type: 'RESET_ALL' }) }}>
+                ↺ Reset
+              </button>
+            )}
+          </div>
+        </div>
+
+        {listedProjects.map(p => {
           const stats = calcStats(state.links, p.linkIds)
           return (
-            <div key={p.id} className="project-item">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>
+            <div key={p.id} className="project-item"
+              style={{ cursor: p.linkIds.length ? 'pointer' : 'default' }}
+              onClick={() => p.linkIds.length && dispatch({ type: 'SET_ZOOM_TARGET', payload: p.id })}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                onClick={e => e.stopPropagation()}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span className="project-dot" style={{ background: p.color }} />
-                  <b>{p.name}</b>
+                  {editingId === p.id
+                    ? <input autoFocus value={editingName}
+                        onChange={e => setEditingName(e.target.value)}
+                        onBlur={() => handleRename(p.id)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleRename(p.id); if (e.key === 'Escape') setEditingId(null) }}
+                        style={{ fontSize: 12, width: 110, padding: '1px 4px' }} />
+                    : <b>{p.name}</b>
+                  }
+                  {!p.confirmed && <span style={{ fontSize: 9, color: '#e94560', marginLeft: 2 }}>pending</span>}
+                  <button className="btn-ghost" style={{ fontSize: 10, padding: '1px 4px' }}
+                    onClick={e => { e.stopPropagation(); setEditingId(p.id); setEditingName(p.name) }}>✎</button>
                 </span>
                 <span style={{ color: '#666', fontSize: 11 }}>{p.linkIds.length} seg</span>
               </div>
@@ -112,15 +209,25 @@ export default function ProjectManager() {
                   {stats.totalLength_mi.toFixed(2)} mi · Avg PCI {stats.avgPCI.toFixed(0)} · ${Math.round(stats.totalResurf).toLocaleString()}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                <button className="btn-ghost" style={{ fontSize: 10, padding: '3px 7px' }}
-                  onClick={() => exportGeoJSON(state.links, p.linkIds, p.name)}>
-                  GeoJSON
-                </button>
-                {stats && (
+              <div style={{ display: 'flex', gap: 4, marginTop: 6 }} onClick={e => e.stopPropagation()}>
+                {p.confirmed && (
+                  <>
+                    <button className="btn-ghost" style={{ fontSize: 10, padding: '3px 7px' }}
+                      onClick={() => exportGeoJSON(state.links, p.linkIds, p.name)}>
+                      GeoJSON
+                    </button>
+                    {stats && (
+                      <button className="btn-ghost" style={{ fontSize: 10, padding: '3px 7px' }}
+                        onClick={() => exportCSV(stats, p.name)}>
+                        CSV
+                      </button>
+                    )}
+                  </>
+                )}
+                {!p.confirmed && (
                   <button className="btn-ghost" style={{ fontSize: 10, padding: '3px 7px' }}
-                    onClick={() => exportCSV(stats, p.name)}>
-                    CSV
+                    onClick={() => dispatch({ type: 'SET_ACTIVE_PROJECT', payload: p.id })}>
+                    Resume
                   </button>
                 )}
                 <button className="btn-danger" style={{ fontSize: 10, padding: '3px 7px', marginLeft: 'auto' }}
@@ -131,9 +238,9 @@ export default function ProjectManager() {
             </div>
           )
         })}
-        {!state.projects.filter(p => p.confirmed).length && (
+        {!listedProjects.length && (
           <div style={{ padding: 14, color: '#555', fontSize: 11 }}>
-            No confirmed projects yet.
+            {state.activeProjectId ? 'No other projects yet.' : 'No projects yet.'}
           </div>
         )}
       </div>

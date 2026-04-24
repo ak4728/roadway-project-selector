@@ -23,7 +23,9 @@ function ZoomController() {
     if (!id) return
     const project = state.projects.find(p => p.id === id)
     if (!project) return
-    const ids = project.id === state.activeProjectId ? state.pendingLinkIds : project.linkIds
+    const ids = project.id === state.activeProjectId
+      ? [...state.pendingLinkIds, ...(state.autoSuggest ? state.suggestedLinkIds : [])]
+      : project.linkIds
     if (!ids.length) return
     const features = state.links.filter(f => ids.includes(f.id))
     if (!features.length) return
@@ -53,17 +55,55 @@ function BoundsController({ links }) {
 export default function MapView() {
   const { state, dispatch } = useContext(ProjectContext)
 
+  // Compute buffer suggestions in an effect (not render) to allow dispatching
+  useEffect(() => {
+    if (!state.activeProjectId || !state.pendingLinkIds.length) {
+      if (state.suggestedLinkIds.length) dispatch({ type: 'SET_SUGGESTED_LINKS', payload: [] })
+      return
+    }
+    const pendingSet = new Set(state.pendingLinkIds)
+    const confirmedMap = new Map()
+    state.projects.filter(p => p.confirmed).forEach(p => p.linkIds.forEach(id => confirmedMap.set(id, p)))
+    const newSuggested = []
+    try {
+      const pendingFeatures = state.links.filter(f => pendingSet.has(f.id))
+      const pendingStreets = new Set(pendingFeatures.map(f => f.properties?.STREET).filter(Boolean))
+      const fc = { type: 'FeatureCollection', features: pendingFeatures }
+      const buffered = turf.buffer(fc, state.bufferFt, { units: 'feet' })
+      const polys = buffered.features
+      const bufUnion = polys.length === 1 ? polys[0] : polys.reduce((acc, f) => turf.union(acc, f))
+      state.links.forEach(f => {
+        if (pendingSet.has(f.id) || confirmedMap.has(f.id)) return
+        if (pendingStreets.has(f.properties?.STREET)) return
+        try { if (turf.booleanIntersects(f, bufUnion)) newSuggested.push(f.id) } catch (e) {}
+      })
+    } catch (e) {}
+    const cur = [...state.suggestedLinkIds].sort((a, b) => a - b)
+    const nxt = [...newSuggested].sort((a, b) => a - b)
+    if (JSON.stringify(cur) !== JSON.stringify(nxt)) {
+      dispatch({ type: 'SET_SUGGESTED_LINKS', payload: newSuggested })
+    }
+  }, [state.pendingLinkIds, state.bufferFt, state.activeProjectId]) // eslint-disable-line
+
   // Build lookup sets for fast style decisions
   const pendingSet = new Set(state.pendingLinkIds)
-  const confirmedMap = new Map()   // linkId -> project
+  const confirmedMap = new Map()
   state.projects.filter(p => p.confirmed).forEach(p => {
     p.linkIds.forEach(id => confirmedMap.set(id, p))
   })
+  // When autoSuggest ON: suggested links appear cyan (included in effective selection)
+  // When autoSuggest OFF: suggested links appear purple (preview only)
+  const effectivePendingSet = new Set([
+    ...state.pendingLinkIds,
+    ...(state.autoSuggest ? state.suggestedLinkIds : []),
+  ])
+  const purpleSet = state.autoSuggest ? new Set() : new Set(state.suggestedLinkIds)
 
   const getStyle = (feature) => {
     const id = feature.id
-    if (pendingSet.has(id))    return { color: '#00E5FF', weight: 8, opacity: 1 }
-    if (confirmedMap.has(id))  return { color: confirmedMap.get(id).color, weight: 5, opacity: 1 }
+    if (effectivePendingSet.has(id)) return { color: '#00E5FF', weight: 8, opacity: 1 }
+    if (confirmedMap.has(id))        return { color: confirmedMap.get(id).color, weight: 5, opacity: 1 }
+    if (purpleSet.has(id))           return { color: '#c084fc', weight: 5, opacity: 0.9 }
     return { color: getPciColor(feature.properties?.PCI), weight: 4, opacity: 0.85 }
   }
 
@@ -97,7 +137,7 @@ export default function MapView() {
 
   // Key forces re-render on selection changes so styles update
   // Must include activeProjectId — changing it doesn't alter pendingLinkIds (already []) so without it the GeoJSON layer won't remount and onEachFeature will have a stale closure with activeProjectId=null
-  const mapKey = `${state.activeProjectId}-${JSON.stringify(state.pendingLinkIds)}-${state.projects.map(p => p.linkIds.join()).join('|')}`
+  const mapKey = `${state.activeProjectId}-${state.autoSuggest}-${state.bufferFt}-${JSON.stringify(state.pendingLinkIds)}-${JSON.stringify(state.suggestedLinkIds)}-${state.projects.map(p => p.linkIds.join()).join('|')}`
 
   return (
     <MapContainer

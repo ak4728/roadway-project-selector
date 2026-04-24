@@ -12,7 +12,10 @@ export const initialState = {
   projects: [],
   activeProjectId: null,
   pendingLinkIds: [],
+  suggestedLinkIds: [],
+  autoSuggest: true,
   zoomTargetId: null,
+  bufferFt: 500,
 }
 
 export function reducer(state, action) {
@@ -32,11 +35,12 @@ export function reducer(state, action) {
         ],
         activeProjectId: id,
         pendingLinkIds: [],
+        suggestedLinkIds: [],
       }
     }
 
     case 'SET_ACTIVE_PROJECT':
-      return { ...state, activeProjectId: action.payload, pendingLinkIds: [] }
+      return { ...state, activeProjectId: action.payload, pendingLinkIds: [], suggestedLinkIds: [] }
 
     case 'TOGGLE_LINK': {
       const lid = action.payload
@@ -50,12 +54,13 @@ export function reducer(state, action) {
       return { ...state, pendingLinkIds: state.pendingLinkIds.slice(0, -1) }
 
     case 'CONFIRM_PROJECT': {
+      const linkIds = action.payload.linkIds ?? [...state.pendingLinkIds]
       const updated = state.projects.map(p =>
         p.id === state.activeProjectId
-          ? { ...p, confirmed: true, linkIds: [...state.pendingLinkIds], buffer: action.payload.buffer }
+          ? { ...p, confirmed: true, linkIds, buffer: action.payload.buffer }
           : p
       )
-      return { ...state, projects: updated, activeProjectId: null, pendingLinkIds: [] }
+      return { ...state, projects: updated, activeProjectId: null, pendingLinkIds: [], suggestedLinkIds: [] }
     }
 
     case 'REMOVE_LINK_FROM_PROJECT': {
@@ -81,6 +86,21 @@ export function reducer(state, action) {
       return { ...state, projects: state.projects.map(p => p.id === id ? { ...p, name } : p) }
     }
 
+    case 'EDIT_PROJECT': {
+      const project = state.projects.find(p => p.id === action.payload)
+      if (!project) return state
+      return { ...state, activeProjectId: project.id, pendingLinkIds: [...project.linkIds], suggestedLinkIds: [] }
+    }
+
+    case 'SET_BUFFER_FT':
+      return { ...state, bufferFt: action.payload }
+
+    case 'SET_SUGGESTED_LINKS':
+      return { ...state, suggestedLinkIds: action.payload }
+
+    case 'SET_AUTO_SUGGEST':
+      return { ...state, autoSuggest: action.payload, suggestedLinkIds: [] }
+
     case 'RESET_ALL':
       return { ...initialState, links: state.links }
 
@@ -90,16 +110,18 @@ export function reducer(state, action) {
         projects: action.payload.projects ?? state.projects,
         activeProjectId: action.payload.activeProjectId ?? state.activeProjectId,
         pendingLinkIds: action.payload.pendingLinkIds ?? state.pendingLinkIds,
+        bufferFt: action.payload.bufferFt ?? state.bufferFt,
+        autoSuggest: action.payload.autoSuggest ?? state.autoSuggest,
       }
 
     case 'CLEAR_SELECTION':
-      return { ...state, pendingLinkIds: [] }
+      return { ...state, pendingLinkIds: [], suggestedLinkIds: [] }
 
     case 'SET_ZOOM_TARGET':
       return { ...state, zoomTargetId: action.payload }
 
     case 'IMPORT_PROJECTS':
-      return { ...state, projects: action.payload, activeProjectId: null, pendingLinkIds: [], zoomTargetId: null }
+      return { ...state, projects: action.payload, activeProjectId: null, pendingLinkIds: [], suggestedLinkIds: [], zoomTargetId: null }
 
     default:
       return state

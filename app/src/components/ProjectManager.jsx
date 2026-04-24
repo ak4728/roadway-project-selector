@@ -6,10 +6,11 @@ import { calcStats, exportGeoJSON, exportCSV, exportAllProjectsJSON } from '../u
 export default function ProjectManager() {
   const { state, dispatch } = useContext(ProjectContext)
   const [newName, setNewName] = useState('')
-  const [bufferFt, setBufferFt] = useState(500)
   const [editingId, setEditingId] = useState(null)
   const [editingName, setEditingName] = useState('')
   const importRef = useRef(null)
+
+  const bufferFt = state.bufferFt
 
   const activeProject = state.projects.find(p => p.id === state.activeProjectId)
 
@@ -27,16 +28,20 @@ export default function ProjectManager() {
   }
 
   const handleConfirm = () => {
-    if (!state.pendingLinkIds.length) return
-    const features = state.links.filter(f => state.pendingLinkIds.includes(f.id))
+    const effectiveIds = [
+      ...state.pendingLinkIds,
+      ...(state.autoSuggest ? state.suggestedLinkIds : []),
+    ]
+    if (!effectiveIds.length) return
+    const features = state.links.filter(f => effectiveIds.includes(f.id))
     const fc = { type: 'FeatureCollection', features }
     let buffer = null
     try {
-      const buffered = turf.buffer(fc, bufferFt, { units: 'feet' })
+      const buffered = turf.buffer(fc, state.bufferFt, { units: 'feet' })
       const polys = buffered.features
       buffer = polys.length === 1 ? polys[0] : polys.reduce((acc, f) => turf.union(acc, f))
     } catch (e) { /* ignore */ }
-    dispatch({ type: 'CONFIRM_PROJECT', payload: { buffer } })
+    dispatch({ type: 'CONFIRM_PROJECT', payload: { buffer, linkIds: effectiveIds } })
   }
 
   const handleImportFile = (e) => {
@@ -101,7 +106,11 @@ export default function ProjectManager() {
             </button>
           </div>
           <div style={{ color: '#aaa', fontSize: 11, marginBottom: 8, marginTop: 6 }}>
-            {state.pendingLinkIds.length} segment(s) selected — click links on map
+            <span style={{ color: '#00E5FF' }}>{state.pendingLinkIds.length} manual</span>
+            {state.autoSuggest && state.suggestedLinkIds.length > 0 && (
+              <span style={{ color: '#c084fc', marginLeft: 6 }}>+ {state.suggestedLinkIds.length} auto</span>
+            )}
+            <span style={{ color: '#666', marginLeft: 6 }}>— click links on map</span>
           </div>
 
           {/* Selected link chips */}
@@ -134,22 +143,32 @@ export default function ProjectManager() {
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
             <label style={{ fontSize: 11, color: '#aaa', display: 'flex', alignItems: 'center', gap: 4 }}>
               Buffer:
               <input
                 type="number"
                 value={bufferFt}
                 min={50} max={5000}
-                onChange={e => setBufferFt(Number(e.target.value))}
+                onChange={e => dispatch({ type: 'SET_BUFFER_FT', payload: Number(e.target.value) })}
                 style={{ width: 65 }}
               />
               ft
             </label>
+            <label style={{ fontSize: 11, color: state.autoSuggest ? '#c084fc' : '#666', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={state.autoSuggest}
+                onChange={e => dispatch({ type: 'SET_AUTO_SUGGEST', payload: e.target.checked })}
+                style={{ accentColor: '#c084fc' }}
+              />
+              Auto-suggest
+            </label>
           </div>
 
           <button className="btn-success" style={{ width: '100%' }}
-            onClick={handleConfirm} disabled={!state.pendingLinkIds.length}>
+            onClick={handleConfirm}
+            disabled={!state.pendingLinkIds.length && !(state.autoSuggest && state.suggestedLinkIds.length)}>
             ✓ Confirm Project
           </button>
         </div>
@@ -212,6 +231,10 @@ export default function ProjectManager() {
               <div style={{ display: 'flex', gap: 4, marginTop: 6 }} onClick={e => e.stopPropagation()}>
                 {p.confirmed && (
                   <>
+                    <button className="btn-ghost" style={{ fontSize: 10, padding: '3px 7px' }}
+                      onClick={e => { e.stopPropagation(); dispatch({ type: 'EDIT_PROJECT', payload: p.id }) }}>
+                      ✎ Edit
+                    </button>
                     <button className="btn-ghost" style={{ fontSize: 10, padding: '3px 7px' }}
                       onClick={() => exportGeoJSON(state.links, p.linkIds, p.name)}>
                       GeoJSON

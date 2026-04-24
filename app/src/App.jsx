@@ -32,9 +32,11 @@ export default function App() {
         projects: state.projects,
         activeProjectId: state.activeProjectId,
         pendingLinkIds: state.pendingLinkIds,
+        bufferFt: state.bufferFt,
+        autoSuggest: state.autoSuggest,
       }))
     } catch (e) { /* ignore quota errors */ }
-  }, [state.projects, state.activeProjectId, state.pendingLinkIds])
+  }, [state.projects, state.activeProjectId, state.pendingLinkIds, state.bufferFt, state.autoSuggest])
 
   return (
     <ProjectContext.Provider value={{ state, dispatch }}>
